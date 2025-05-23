@@ -3,6 +3,8 @@
 
 import io
 import json
+from datetime import datetime
+
 import streamlit as st
 import plotly.graph_objects as go
 import statistics as stats
@@ -41,7 +43,7 @@ def build_barograph(
         for i, cat in enumerate(categories):
             for j, sub in enumerate(scores[cat]):
                 fig.add_trace(go.Bar(
-                    x=[i + (j-1)*0.22],
+                    x=[i + (j - 1) * 0.22],
                     y=[scores[cat][sub]],
                     width=0.2,
                     name=sub,
@@ -84,13 +86,21 @@ def create_docx_report(
     player_type: str,
     scores: dict[str, dict[str, int]]
 ) -> bytes:
-    """Build and return a .docx report with the embedded bar chart + scores."""
+    """
+    Build and return a .docx report with:
+      - Header
+      - Timestamp
+      - Embedded bar chart PNG
+      - Category averages list
+      - Overall rating
+    """
     # Generate chart image
     fig = build_barograph(scores, show_sub=True, show_avg=True)
     img = fig.to_image(format="png", width=800, height=400)
 
     doc = Document()
     doc.add_heading(f"{player_name} – {player_type} Stats Report", level=1)
+    doc.add_paragraph(f"Report Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
     doc.add_picture(io.BytesIO(img), width=Inches(6))
     doc.add_paragraph()
@@ -113,47 +123,65 @@ def create_docx_report(
 # ─────────────────────────────────────────────────────────────
 def main():
     st.title("🏅 Player Stats: Barograph")
-    st.markdown("Select a player, rate their skills, and export a report!")
+    st.markdown("Select a player, upload a previous report (optional), then rate skills and export a new version!")
 
-    # Dropdowns instead of text inputs
+    # Player selection
     player_type = st.selectbox("Player Type", list(PLAYER_INFO.keys()))
     player_name = st.selectbox(
         "Player Name",
         list(PLAYER_INFO[player_type]["Players"].keys())
     )
 
+    # Optional upload of existing report
+    uploaded = st.file_uploader("Upload existing .docx report", type="docx")
+    parsed_avgs: dict[str, float] = {}
+    if uploaded:
+        doc = Document(uploaded)
+        for para in doc.paragraphs:
+            text = para.text.strip()
+            if text.startswith("• "):
+                parts = text[2:].split(":")
+                if len(parts) == 2:
+                    cat, val = parts
+                    try:
+                        parsed_avgs[cat.strip()] = float(val)
+                    except ValueError:
+                        pass
+
     st.header(f"{player_name} – {player_type} Skills")
 
-    # Core skillset sliders
-    skillset = PLAYER_INFO[player_type]["Skillset"]
+    # Build scores (prefilled if report uploaded)
     scores: dict[str, dict[str, int]] = {}
+    skillset = PLAYER_INFO[player_type]["Skillset"]
     for cat, subs in skillset.items():
         with st.expander(cat, expanded=True):
             scores[cat] = {}
+            default = int(parsed_avgs.get(cat, 100))
             for sub in subs:
                 scores[cat][sub] = st.slider(
                     label=sub,
                     min_value=1,
                     max_value=100,
-                    value=100,
+                    value=default,
                     key=f"{cat}_{sub}"
                 )
 
-    # Specialty sliders (if defined)
+    # Specialty sliders (if any)
     specialty = PLAYER_INFO[player_type]["Players"][player_name].get("Specialty", {})
     for spec_cat, subs in specialty.items():
         with st.expander(f"Specialty: {spec_cat}", expanded=True):
             scores[spec_cat] = {}
+            default = int(parsed_avgs.get(spec_cat, 100))
             for sub in subs:
                 scores[spec_cat][sub] = st.slider(
                     label=sub,
                     min_value=1,
                     max_value=100,
-                    value=100,
+                    value=default,
                     key=f"{spec_cat}_{sub}"
                 )
 
-    # Toggle layers
+    # Toggles
     col1, col2 = st.columns(2)
     show_sub = col1.checkbox("Show Sub-skill Bars", True)
     show_avg = col2.checkbox("Show Category Average Bars", True)
@@ -170,13 +198,15 @@ def main():
     overall = stats.mean(category_average(v) for v in scores.values())
     st.markdown(f"**Overall Rating:** {overall:.1f} / 120")
 
-    # Export DOCX
+    # Export DOCX with date in filename
     if st.button("Save Report as DOCX"):
-        docx = create_docx_report(player_name, player_type, scores)
+        docx_bytes = create_docx_report(player_name, player_type, scores)
+        date_str = datetime.now().strftime("%Y-%m-%d")
+        filename = f"{date_str}_{player_name.replace(' ','_')}_{player_type}_Report.docx"
         st.download_button(
             "Download Report",
-            data=docx,
-            file_name=f"{player_name.replace(' ','_')}_{player_type}_Report.docx",
+            data=docx_bytes,
+            file_name=filename,
             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         )
 
