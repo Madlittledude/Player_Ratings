@@ -125,38 +125,36 @@ def parse_docx_report(docx_file):
 def main():
     st.title("🏅 Player Stats: Barograph")
 
-    # Sidebar options (always shown)
     st.sidebar.header("Options")
     show_slider = st.sidebar.checkbox("Show Sliders", True)
     show_num_input = st.sidebar.checkbox("Show Number Inputs", False)
     show_sub = st.sidebar.checkbox("Show Sub-skill Bars", True)
     show_avg = st.sidebar.checkbox("Show Category Average Bars", True)
     if st.sidebar.button("Reset/Start Over"):
-        for key in st.session_state.keys():
+        for key in list(st.session_state.keys()):
             del st.session_state[key]
-        st.experimental_rerun()
 
-    # Session state to control workflow
+    # SESSION STATE for workflow
     if "mode" not in st.session_state:
         st.session_state.mode = None
         st.session_state.prefill_meta = {}
-    
-    # Main workflow: pick upload or create new
+
+    # ---- Upload or create new? Only allow one choice.
     if st.session_state.mode is None:
-        st.markdown("## Start: Upload a previous report or create a new one")
         uploaded = st.file_uploader("Upload .docx report to continue updating, or click below to start fresh.", type="docx")
         create_new = st.button("Create New Report")
-        if uploaded:
+
+        if uploaded is not None:
             st.session_state.mode = "edit"
             st.session_state.prefill_meta = parse_docx_report(uploaded)
-            st.experimental_rerun()
         elif create_new:
             st.session_state.mode = "new"
             st.session_state.prefill_meta = {}
-            st.experimental_rerun()
-        else:
-            st.info("Upload a DOCX to update, or click 'Create New Report' to begin.")
-            st.stop()
+
+    # Show nothing if no selection yet
+    if st.session_state.mode is None:
+        st.info("Upload a DOCX to update, or click 'Create New Report' to begin.")
+        st.stop()
     # -----
     # Pick up in either mode
     prefill_meta = st.session_state.prefill_meta
