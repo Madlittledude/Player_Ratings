@@ -29,16 +29,10 @@ def build_barograph(
     show_sub: bool,
     show_avg: bool
 ) -> go.Figure:
-    """
-    Create a layered Plotly bar chart.
-    - Thin colored bars for each sub-skill
-    - Translucent wide bar for the category average
-    """
     fig = go.Figure()
     categories = list(scores.keys())
     palette = ["#636EFA", "#EF553B", "#00CC96"]
 
-    # Sub-skill bars
     if show_sub:
         for i, cat in enumerate(categories):
             for j, sub in enumerate(scores[cat]):
@@ -52,7 +46,6 @@ def build_barograph(
                     showlegend=(i == 0),
                 ))
 
-    # Category-average bars
     if show_avg:
         for i, cat in enumerate(categories):
             avg = category_average(scores[cat])
@@ -86,14 +79,6 @@ def create_docx_report(
     player_type: str,
     scores: dict[str, dict[str, int]]
 ) -> bytes:
-    """
-    Build and return a .docx report with:
-      - Header
-      - Timestamp
-      - Embedded bar chart PNG
-      - Category averages list
-      - Overall rating
-    """
     fig = build_barograph(scores, show_sub=True, show_avg=True)
     img = fig.to_image(format="png", width=800, height=400)
 
@@ -117,7 +102,6 @@ def create_docx_report(
 
 def parse_docx_report(docx_file):
     doc = Document(docx_file)
-    # Look for: - header = player_name/type, - category lines, - overall (not used for prefill)
     meta = {"player_type": None, "player_name": None, "cat_avgs": {}}
     for para in doc.paragraphs:
         text = para.text.strip()
@@ -136,42 +120,49 @@ def parse_docx_report(docx_file):
     return meta
 
 # ─────────────────────────────────────────────────────────────
-# 3. STREAMLIT APP
+# 3. STREAMLIT APP (with session state for flow control)
 # ─────────────────────────────────────────────────────────────
 def main():
     st.title("🏅 Player Stats: Barograph")
 
+    # Sidebar options (always shown)
     st.sidebar.header("Options")
-    # Input/Slider toggle
     show_slider = st.sidebar.checkbox("Show Sliders", True)
     show_num_input = st.sidebar.checkbox("Show Number Inputs", False)
     show_sub = st.sidebar.checkbox("Show Sub-skill Bars", True)
     show_avg = st.sidebar.checkbox("Show Category Average Bars", True)
+    if st.sidebar.button("Reset/Start Over"):
+        for key in st.session_state.keys():
+            del st.session_state[key]
+        st.experimental_rerun()
 
-    st.markdown("## Start: Upload a previous report or create a new one")
-    uploaded = st.file_uploader("Upload .docx report to continue updating, or click below to start fresh.", type="docx")
-    create_new = st.button("Create New Report")
+    # Session state to control workflow
+    if "mode" not in st.session_state:
+        st.session_state.mode = None
+        st.session_state.prefill_meta = {}
+    
+    # Main workflow: pick upload or create new
+    if st.session_state.mode is None:
+        st.markdown("## Start: Upload a previous report or create a new one")
+        uploaded = st.file_uploader("Upload .docx report to continue updating, or click below to start fresh.", type="docx")
+        create_new = st.button("Create New Report")
+        if uploaded:
+            st.session_state.mode = "edit"
+            st.session_state.prefill_meta = parse_docx_report(uploaded)
+            st.experimental_rerun()
+        elif create_new:
+            st.session_state.mode = "new"
+            st.session_state.prefill_meta = {}
+            st.experimental_rerun()
+        else:
+            st.info("Upload a DOCX to update, or click 'Create New Report' to begin.")
+            st.stop()
+    # -----
+    # Pick up in either mode
+    prefill_meta = st.session_state.prefill_meta
+    use_existing = st.session_state.mode == "edit"
 
-    # User state
-    state = st.session_state
-    # Flags for which mode
-    use_existing = False
-    prefill_meta = {}
-
-    if uploaded:
-        prefill_meta = parse_docx_report(uploaded)
-        use_existing = True
-    elif create_new:
-        use_existing = False
-
-    # Hide interface until upload or button
-    if not uploaded and not create_new:
-        st.info("Upload a DOCX to update, or click 'Create New Report' to begin.")
-        st.stop()
-
-    # ----------------
     # Player selection and prefill
-    # ----------------
     if use_existing and prefill_meta.get("player_type") and prefill_meta.get("player_name"):
         player_type = prefill_meta["player_type"]
         player_name = prefill_meta["player_name"]
@@ -192,7 +183,6 @@ def main():
             scores[cat] = {}
             avg_val = int(cat_avgs.get(cat, 50))
             for sub in subs:
-                # Use slider and/or input according to sidebar
                 if show_slider and show_num_input:
                     c1, c2 = st.columns(2)
                     val = c1.slider(
