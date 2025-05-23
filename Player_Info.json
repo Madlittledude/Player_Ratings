@@ -1,0 +1,68 @@
+{
+  "Paralegal": {
+    "Players": {
+      "Maximiliano A. Neblina": {
+        "Specialty": {
+          "Technology": [
+            "Document Automation",
+            "Data Presentation",
+            "Prompting",
+            "Tool Mastery"
+          ]
+        }
+      },
+      "Will Mujica": {
+        "Specialty": {
+          "Leadership": [
+            "Delegation",
+            "System adherence of subordinates",
+            "Lower rank subordinate growth",
+            "Conflict Resolution"
+          ]
+        }
+      }
+    },
+    "Skillset": {
+  "Discovery": [
+    "Fact Collection",
+    "Draft Requests",
+    "Draft Responses",
+    "Document Management",
+    "Calendaring",
+    "Updating MLS",
+    "Updating CP",
+    "Timeliness"
+  ],
+  "Pleadings & Motions": [
+    "Complaints",
+    "Motion/Pleading Drafting",
+    "E-Filing Success Score",
+    "Formatting & Rule Compliance",
+    "Legal Research"
+  ],
+  "Case Intelligence": [
+    "Strategy Contribution",
+    "Knowledge of Case Facts",
+    "Initiative & Next Steps",
+    "Client Relationship",
+    "Understanding of Damages"
+  ],
+  "Calendar": [
+    "Calendar Accuracy",
+    "Uniformity",
+    "Knoweldge of Local Court Rules"
+  ],
+  "Clients": [
+    "Monthly Client Contact",
+    "Responsiveness",
+    "Client Satisfaction"
+  ],
+  "Quality of Human": [
+    "Coachability",
+    "Vibes",
+    "Composure Under Pressure",
+    "Consistency"
+  ]
+    }
+  }
+}
