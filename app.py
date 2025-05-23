@@ -1,9 +1,12 @@
 # player_barograph_streamlit.py
 # Run with: streamlit run player_barograph_streamlit.py
 
+import io
 import streamlit as st
 import plotly.graph_objects as go
 import statistics as stats
+from docx import Document
+from docx.shared import Inches
 
 # ─────────────────────────────────────────────────────────────
 # 1. DEFINE YOUR SKILL TAXONOMY (at the top)
@@ -81,7 +84,7 @@ def build_barograph(
 
     fig.update_layout(
         barmode="overlay",
-        title="Paralegal Skill Barograph",
+        title="Skill Barograph",
         xaxis=dict(
             tickmode="array",
             tickvals=x_positions,
@@ -95,16 +98,58 @@ def build_barograph(
     return fig
 
 
+def create_docx_report(
+    player_name: str,
+    player_type: str,
+    scores: dict[str, dict[str, int]]
+) -> bytes:
+    """
+    INPUT:
+        player_name: Name of the player
+        player_type: Type (e.g., Paralegal)
+        scores: {category: {subskill: score}}
+    OUTPUT:
+        bytes of the DOCX file
+    """
+    # build the chart for embedding
+    fig = build_barograph(scores, show_sub=True, show_avg=True)
+    img_bytes = fig.to_image(format="png", width=800, height=400)
+
+    doc = Document()
+    doc.add_heading(f"{player_name} – {player_type} Stats Report", level=1)
+
+    # insert chart
+    image_stream = io.BytesIO(img_bytes)
+    doc.add_picture(image_stream, width=Inches(6))
+
+    doc.add_paragraph()
+
+    # category averages
+    for cat, subdict in scores.items():
+        avg = category_average(subdict)
+        doc.add_paragraph(f"• {cat}: {avg:.1f}", style="List Bullet")
+
+    overall = stats.mean([category_average(subdict) for subdict in scores.values()])
+    doc.add_paragraph()
+    doc.add_paragraph(f"Overall Rating: {overall:.1f} / 120", style="Intense Quote")
+
+    bio = io.BytesIO()
+    doc.save(bio)
+    return bio.getvalue()
+
+
 # ─────────────────────────────────────────────────────────────
 # 3. STREAMLIT APP
 # ─────────────────────────────────────────────────────────────
 def main():
-    st.title("🏅 Player Stats: Paralegal Barograph")
-    st.markdown("Use the controls below to set sub-skill scores and toggle views.")
+    st.title("🏅 Player Stats: Barograph")
+    st.markdown("Rate your team members and export a report!")
 
-    # -- select player type (only Paralegal for now)
+    # -- player info inputs
     player_type = st.selectbox("Player Type", list(PLAYER_SKILLSETS.keys()))
-    st.header(f"{player_type} Skills")
+    player_name = st.text_input("Player Name", value="Enter name here")
+
+    st.header(f"{player_name} – {player_type} Skills")
 
     # -- input scores
     scores: dict[str, dict[str, int]] = {}
@@ -112,7 +157,6 @@ def main():
         with st.expander(cat, expanded=True):
             scores[cat] = {}
             for sub in subs:
-                # allow integer input 1–120
                 scores[cat][sub] = st.number_input(
                     label=sub,
                     min_value=1,
@@ -124,22 +168,31 @@ def main():
 
     # -- toggles
     col1, col2 = st.columns(2)
-    show_sub    = col1.checkbox("Show Sub-skill Bars", value=True)
-    show_avg    = col2.checkbox("Show Category Average Bars", value=True)
+    show_sub = col1.checkbox("Show Sub-skill Bars", value=True)
+    show_avg = col2.checkbox("Show Category Average Bars", value=True)
 
-    # -- build & display
+    # -- render chart
     fig = build_barograph(scores, show_sub, show_avg)
     st.plotly_chart(fig, use_container_width=True)
 
-    # -- data below plot
+    # -- display scores
     st.markdown("### Category Averages")
-    for cat in scores:
-        avg = category_average(scores[cat])
+    for cat, subdict in scores.items():
+        avg = category_average(subdict)
         st.write(f"**{cat}**: {avg:.1f}")
 
-    overall = stats.mean([category_average(scores[cat]) for cat in scores])
+    overall = stats.mean([category_average(subdict) for subdict in scores.values()])
     st.markdown(f"**Overall Rating:** {overall:.1f} / 120")
 
+    # -- export report
+    if st.button("Save Report as DOCX"):
+        docx_bytes = create_docx_report(player_name, player_type, scores)
+        st.download_button(
+            "Download Report",
+            data=docx_bytes,
+            file_name=f"{player_name.replace(' ', '_')}_{player_type}_Report.docx",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        )
 
 if __name__ == "__main__":
     main()
