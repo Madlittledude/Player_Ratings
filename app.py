@@ -2,6 +2,7 @@
 # Run with: streamlit run player_barograph_streamlit.py
 
 import io
+import json
 import streamlit as st
 import plotly.graph_objects as go
 import statistics as stats
@@ -9,18 +10,10 @@ from docx import Document
 from docx.shared import Inches
 
 # ─────────────────────────────────────────────────────────────
-# 1. DEFINE YOUR SKILL TAXONOMY (at the top)
+# 1. LOAD PLAYER INFO FROM JSON
 # ─────────────────────────────────────────────────────────────
-# PLAYER_SKILLSETS = {
-#     "Paralegal": {
-#         "Execution":     ["Follow-through", "Accuracy", "Efficiency"],
-#         "Judgment":      ["Prioritization", "Legal Discernment", "Escalation Timing"],
-#         "Communication": ["Client Updates", "Internal Sync", "Written Clarity"],
-#         "Organization":  ["Calendar Control", "File Order", "Tool Fluency"],
-#         "Knowledge":     ["Procedure & Rules", "PI & Medical Concepts", "Research Savvy"],
-#         "Initiative":    ["Case Vision", "Problem-Solving", "Professionalism"],
-#     }
-# }
+with open("Player_Info.json", "r") as f:
+    PLAYER_INFO = json.load(f)
 
 # ─────────────────────────────────────────────────────────────
 # 2. HELPER FUNCTIONS
@@ -33,7 +26,6 @@ def category_average(sub_scores: dict[str, int]) -> float:
         float average of the values
     """
     return stats.mean(sub_scores.values())
-
 
 def build_barograph(
     scores: dict[str, dict[str, int]],
@@ -59,11 +51,11 @@ def build_barograph(
             subs = list(scores[cat].keys())
             for j, sub in enumerate(subs):
                 fig.add_trace(go.Bar(
-                    x=[idx + (j - 1) * 0.22],  # offsets: -0.22, 0, +0.22
+                    x=[idx + (j - 1) * 0.22],
                     y=[scores[cat][sub]],
                     width=0.2,
                     name=sub,
-                    marker_color=palette[j],
+                    marker_color=palette[j % len(palette)],
                     legendgroup=sub,
                     showlegend=(idx == 0),
                 ))
@@ -97,7 +89,6 @@ def build_barograph(
     )
     return fig
 
-
 def create_docx_report(
     player_name: str,
     player_type: str,
@@ -111,32 +102,29 @@ def create_docx_report(
     OUTPUT:
         bytes of the DOCX file
     """
-    # build the chart for embedding
+    # embed full chart
     fig = build_barograph(scores, show_sub=True, show_avg=True)
     img_bytes = fig.to_image(format="png", width=800, height=400)
 
     doc = Document()
     doc.add_heading(f"{player_name} – {player_type} Stats Report", level=1)
 
-    # insert chart
     image_stream = io.BytesIO(img_bytes)
     doc.add_picture(image_stream, width=Inches(6))
-
     doc.add_paragraph()
 
-    # category averages
+    # list category averages
     for cat, subdict in scores.items():
         avg = category_average(subdict)
         doc.add_paragraph(f"• {cat}: {avg:.1f}", style="List Bullet")
 
     overall = stats.mean([category_average(subdict) for subdict in scores.values()])
     doc.add_paragraph()
-    doc.add_paragraph(f"Overall Rating: {overall:.1f} / 100", style="Intense Quote")
+    doc.add_paragraph(f"Overall Rating: {overall:.1f} / 120", style="Intense Quote")
 
     bio = io.BytesIO()
     doc.save(bio)
     return bio.getvalue()
-
 
 # ─────────────────────────────────────────────────────────────
 # 3. STREAMLIT APP
@@ -145,15 +133,19 @@ def main():
     st.title("🏅 Player Stats: Barograph")
     st.markdown("Rate your team members and export a report!")
 
-    # -- player info inputs
-    player_type = st.selectbox("Player Type", list(PLAYER_SKILLSETS.keys()))
-    player_name = st.text_input("Player Name", value="Enter name here")
+    # -- select type and player
+    player_type = st.selectbox("Player Type", list(PLAYER_INFO.keys()))
+    player_name = st.selectbox(
+        "Player Name",
+        list(PLAYER_INFO[player_type]["Players"].keys())
+    )
 
     st.header(f"{player_name} – {player_type} Skills")
 
-    # -- input scores
+    # -- core skillset
+    skillset = PLAYER_INFO[player_type]["Skillset"]
     scores: dict[str, dict[str, int]] = {}
-    for cat, subs in PLAYER_SKILLSETS[player_type].items():
+    for cat, subs in skillset.items():
         with st.expander(cat, expanded=True):
             scores[cat] = {}
             for sub in subs:
@@ -166,6 +158,21 @@ def main():
                     key=f"{cat}_{sub}"
                 )
 
+    # -- specialty (if any)
+    specialty = PLAYER_INFO[player_type]["Players"][player_name].get("Specialty", {})
+    for spec_cat, subs in specialty.items():
+        with st.expander(f"Specialty: {spec_cat}", expanded=True):
+            scores[spec_cat] = {}
+            for sub in subs:
+                scores[spec_cat][sub] = st.number_input(
+                    label=sub,
+                    min_value=1,
+                    max_value=120,
+                    value=100,
+                    step=1,
+                    key=f"{spec_cat}_{sub}"
+                )
+
     # -- toggles
     col1, col2 = st.columns(2)
     show_sub = col1.checkbox("Show Sub-skill Bars", value=True)
@@ -175,16 +182,16 @@ def main():
     fig = build_barograph(scores, show_sub, show_avg)
     st.plotly_chart(fig, use_container_width=True)
 
-    # -- display scores
+    # -- show numeric scores
     st.markdown("### Category Averages")
     for cat, subdict in scores.items():
         avg = category_average(subdict)
         st.write(f"**{cat}**: {avg:.1f}")
 
     overall = stats.mean([category_average(subdict) for subdict in scores.values()])
-    st.markdown(f"**Overall Rating:** {overall:.1f} / 100")
+    st.markdown(f"**Overall Rating:** {overall:.1f} / 120")
 
-    # -- export report
+    # -- export DOCX
     if st.button("Save Report as DOCX"):
         docx_bytes = create_docx_report(player_name, player_type, scores)
         st.download_button(
