@@ -11,16 +11,16 @@ from docx.shared import Inches
 # ─────────────────────────────────────────────────────────────
 # 1. DEFINE YOUR SKILL TAXONOMY (at the top)
 # ─────────────────────────────────────────────────────────────
-PLAYER_SKILLSETS = {
-    "Paralegal": {
-        "Execution":     ["Follow-through", "Accuracy", "Efficiency"],
-        "Judgment":      ["Prioritization", "Legal Discernment", "Escalation Timing"],
-        "Communication": ["Client Updates", "Internal Sync", "Written Clarity"],
-        "Organization":  ["Calendar Control", "File Order", "Tool Fluency"],
-        "Knowledge":     ["Procedure & Rules", "PI & Medical Concepts", "Research Savvy"],
-        "Initiative":    ["Case Vision", "Problem-Solving", "Professionalism"],
-    }
-}
+# PLAYER_SKILLSETS = {
+#     "Paralegal": {
+#         "Execution":     ["Follow-through", "Accuracy", "Efficiency"],
+#         "Judgment":      ["Prioritization", "Legal Discernment", "Escalation Timing"],
+#         "Communication": ["Client Updates", "Internal Sync", "Written Clarity"],
+#         "Organization":  ["Calendar Control", "File Order", "Tool Fluency"],
+#         "Knowledge":     ["Procedure & Rules", "PI & Medical Concepts", "Research Savvy"],
+#         "Initiative":    ["Case Vision", "Problem-Solving", "Professionalism"],
+#     }
+# }
 
 # ─────────────────────────────────────────────────────────────
 # 2. HELPER FUNCTIONS
@@ -131,7 +131,7 @@ def create_docx_report(
 
     overall = stats.mean([category_average(subdict) for subdict in scores.values()])
     doc.add_paragraph()
-    doc.add_paragraph(f"Overall Rating: {overall:.1f} / 120", style="Intense Quote")
+    doc.add_paragraph(f"Overall Rating: {overall:.1f} / 100", style="Intense Quote")
 
     bio = io.BytesIO()
     doc.save(bio)
@@ -182,7 +182,7 @@ def main():
         st.write(f"**{cat}**: {avg:.1f}")
 
     overall = stats.mean([category_average(subdict) for subdict in scores.values()])
-    st.markdown(f"**Overall Rating:** {overall:.1f} / 120")
+    st.markdown(f"**Overall Rating:** {overall:.1f} / 100")
 
     # -- export report
     if st.button("Save Report as DOCX"):
