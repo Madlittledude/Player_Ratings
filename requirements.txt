@@ -2,3 +2,4 @@ plotly
 streamlit
 statistics
 python-docx
+kaleido
