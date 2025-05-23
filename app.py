@@ -94,7 +94,6 @@ def create_docx_report(
       - Category averages list
       - Overall rating
     """
-    # Generate chart image
     fig = build_barograph(scores, show_sub=True, show_avg=True)
     img = fig.to_image(format="png", width=800, height=400)
 
@@ -104,8 +103,6 @@ def create_docx_report(
 
     doc.add_picture(io.BytesIO(img), width=Inches(6))
     doc.add_paragraph()
-
-    # Category averages
     for cat, subdict in scores.items():
         avg = category_average(subdict)
         doc.add_paragraph(f"• {cat}: {avg:.1f}", style="List Bullet")
@@ -118,97 +115,181 @@ def create_docx_report(
     doc.save(buf)
     return buf.getvalue()
 
+def parse_docx_report(docx_file):
+    doc = Document(docx_file)
+    # Look for: - header = player_name/type, - category lines, - overall (not used for prefill)
+    meta = {"player_type": None, "player_name": None, "cat_avgs": {}}
+    for para in doc.paragraphs:
+        text = para.text.strip()
+        if text.endswith("Stats Report") and "–" in text:
+            p, t = text.replace("Stats Report", "").split("–")
+            meta["player_name"] = p.strip()
+            meta["player_type"] = t.strip()
+        elif text.startswith("• "):
+            parts = text[2:].split(":")
+            if len(parts) == 2:
+                cat, val = parts
+                try:
+                    meta["cat_avgs"][cat.strip()] = float(val)
+                except ValueError:
+                    pass
+    return meta
+
 # ─────────────────────────────────────────────────────────────
 # 3. STREAMLIT APP
 # ─────────────────────────────────────────────────────────────
 def main():
     st.title("🏅 Player Stats: Barograph")
-    st.markdown("Select a player, upload a previous report (optional), then rate skills and export a new version!")
 
-    # Player selection
-    player_type = st.selectbox("Player Type", list(PLAYER_INFO.keys()))
-    player_name = st.selectbox(
-        "Player Name",
-        list(PLAYER_INFO[player_type]["Players"].keys())
-    )
+    st.sidebar.header("Options")
+    # Input/Slider toggle
+    show_slider = st.sidebar.checkbox("Show Sliders", True)
+    show_num_input = st.sidebar.checkbox("Show Number Inputs", False)
+    show_sub = st.sidebar.checkbox("Show Sub-skill Bars", True)
+    show_avg = st.sidebar.checkbox("Show Category Average Bars", True)
 
-    # Optional upload of existing report
-    uploaded = st.file_uploader("Upload existing .docx report", type="docx")
-    parsed_avgs: dict[str, float] = {}
+    st.markdown("## Start: Upload a previous report or create a new one")
+    uploaded = st.file_uploader("Upload .docx report to continue updating, or click below to start fresh.", type="docx")
+    create_new = st.button("Create New Report")
+
+    # User state
+    state = st.session_state
+    # Flags for which mode
+    use_existing = False
+    prefill_meta = {}
+
     if uploaded:
-        doc = Document(uploaded)
-        for para in doc.paragraphs:
-            text = para.text.strip()
-            if text.startswith("• "):
-                parts = text[2:].split(":")
-                if len(parts) == 2:
-                    cat, val = parts
-                    try:
-                        parsed_avgs[cat.strip()] = float(val)
-                    except ValueError:
-                        pass
+        prefill_meta = parse_docx_report(uploaded)
+        use_existing = True
+    elif create_new:
+        use_existing = False
+
+    # Hide interface until upload or button
+    if not uploaded and not create_new:
+        st.info("Upload a DOCX to update, or click 'Create New Report' to begin.")
+        st.stop()
+
+    # ----------------
+    # Player selection and prefill
+    # ----------------
+    if use_existing and prefill_meta.get("player_type") and prefill_meta.get("player_name"):
+        player_type = prefill_meta["player_type"]
+        player_name = prefill_meta["player_name"]
+        st.success(f"Loaded: {player_name} – {player_type}")
+    else:
+        player_type = st.selectbox("Player Type", list(PLAYER_INFO.keys()))
+        player_name = st.selectbox("Player Name", list(PLAYER_INFO[player_type]["Players"].keys()))
 
     st.header(f"{player_name} – {player_type} Skills")
 
-    # Build scores (prefilled if report uploaded)
+    # --- Build scores, prefill from docx or 50 for new
     scores: dict[str, dict[str, int]] = {}
     skillset = PLAYER_INFO[player_type]["Skillset"]
+    cat_avgs = prefill_meta.get("cat_avgs", {}) if use_existing else {}
+
     for cat, subs in skillset.items():
         with st.expander(cat, expanded=True):
             scores[cat] = {}
-            default = int(parsed_avgs.get(cat, 100))
+            avg_val = int(cat_avgs.get(cat, 50))
             for sub in subs:
-                scores[cat][sub] = st.slider(
-                    label=sub,
-                    min_value=1,
-                    max_value=100,
-                    value=default,
-                    key=f"{cat}_{sub}"
-                )
+                # Use slider and/or input according to sidebar
+                if show_slider and show_num_input:
+                    c1, c2 = st.columns(2)
+                    val = c1.slider(
+                        label=f"{sub}",
+                        min_value=1,
+                        max_value=100,
+                        value=avg_val,
+                        key=f"{cat}_{sub}_slider"
+                    )
+                    val = c2.number_input(
+                        label=f"{sub}",
+                        min_value=1,
+                        max_value=100,
+                        value=val,
+                        key=f"{cat}_{sub}_input"
+                    )
+                elif show_slider:
+                    val = st.slider(
+                        label=sub,
+                        min_value=1,
+                        max_value=100,
+                        value=avg_val,
+                        key=f"{cat}_{sub}_slider"
+                    )
+                else:
+                    val = st.number_input(
+                        label=sub,
+                        min_value=1,
+                        max_value=100,
+                        value=avg_val,
+                        key=f"{cat}_{sub}_input"
+                    )
+                scores[cat][sub] = val
 
-    # Specialty sliders (if any)
+    # --- Specialty sliders/inputs (if defined)
     specialty = PLAYER_INFO[player_type]["Players"][player_name].get("Specialty", {})
     for spec_cat, subs in specialty.items():
         with st.expander(f"Specialty: {spec_cat}", expanded=True):
             scores[spec_cat] = {}
-            default = int(parsed_avgs.get(spec_cat, 100))
+            avg_val = int(cat_avgs.get(spec_cat, 50))
             for sub in subs:
-                scores[spec_cat][sub] = st.slider(
-                    label=sub,
-                    min_value=1,
-                    max_value=100,
-                    value=default,
-                    key=f"{spec_cat}_{sub}"
-                )
+                if show_slider and show_num_input:
+                    c1, c2 = st.columns(2)
+                    val = c1.slider(
+                        label=f"{sub}",
+                        min_value=1,
+                        max_value=100,
+                        value=avg_val,
+                        key=f"{spec_cat}_{sub}_slider"
+                    )
+                    val = c2.number_input(
+                        label=f"{sub}",
+                        min_value=1,
+                        max_value=100,
+                        value=val,
+                        key=f"{spec_cat}_{sub}_input"
+                    )
+                elif show_slider:
+                    val = st.slider(
+                        label=sub,
+                        min_value=1,
+                        max_value=100,
+                        value=avg_val,
+                        key=f"{spec_cat}_{sub}_slider"
+                    )
+                else:
+                    val = st.number_input(
+                        label=sub,
+                        min_value=1,
+                        max_value=100,
+                        value=avg_val,
+                        key=f"{spec_cat}_{sub}_input"
+                    )
+                scores[spec_cat][sub] = val
 
-    # Toggles
-    col1, col2 = st.columns(2)
-    show_sub = col1.checkbox("Show Sub-skill Bars", True)
-    show_avg = col2.checkbox("Show Category Average Bars", True)
-
-    # Render chart
+    # -- Plotly chart & results
     fig = build_barograph(scores, show_sub, show_avg)
     st.plotly_chart(fig, use_container_width=True)
 
-    # Numeric breakdown
     st.markdown("### Category Averages")
     for cat, subdict in scores.items():
         st.write(f"**{cat}**: {category_average(subdict):.1f}")
-
     overall = stats.mean(category_average(v) for v in scores.values())
     st.markdown(f"**Overall Rating:** {overall:.1f} / 120")
 
-    # Export DOCX with date in filename
-    if st.button("Save Report as DOCX"):
-        docx_bytes = create_docx_report(player_name, player_type, scores)
-        date_str = datetime.now().strftime("%Y-%m-%d")
-        filename = f"{date_str}_{player_name.replace(' ','_')}_{player_type}_Report.docx"
-        st.download_button(
-            "Download Report",
-            data=docx_bytes,
-            file_name=filename,
-            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        )
+    # Sidebar download button
+    with st.sidebar:
+        if st.button("Save Report as DOCX"):
+            docx_bytes = create_docx_report(player_name, player_type, scores)
+            date_str = datetime.now().strftime("%Y-%m-%d")
+            filename = f"{date_str}_{player_name.replace(' ','_')}_{player_type}_Report.docx"
+            st.download_button(
+                "Download Report",
+                data=docx_bytes,
+                file_name=filename,
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            )
 
 if __name__ == "__main__":
     main()
